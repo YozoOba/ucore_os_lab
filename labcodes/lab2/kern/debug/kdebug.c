@@ -305,5 +305,24 @@ print_stackframe(void) {
       *           NOTICE: the calling funciton's return addr eip  = ss:[ebp+4]
       *                   the calling funciton's ebp = ss:[ebp]
       */
+      uint32_t ebp = read_ebp();  //获取当前的ebp指针和eip指针值
+      uint32_t eip = read_eip();
+      for (int i = 0;ebp!=0&&i  < STACKFRAME_DEPTH;i++)
+      {   //输出
+        if (ebp==0)  break;
+        cprintf("-> ebp:0x%08x   eip:0x%08x   " ,ebp,eip);   //输出当前的eip、ebp
+        uint32_t* arguments = (uint32_t*) ebp+2;      //指向参数所在的栈地址
+        cprintf("args: ");
+        for (int j = 0 ;j<4;j++)      //输出参数
+        {
+          cprintf("0x%08x ",arguments[j]);
+        }
+        cprintf("\n");
+        print_debuginfo(eip-1);
+        eip =((uint32_t*) ebp)[1];     //进入上一层的栈
+        ebp= ((uint32_t*) ebp)[0];
+      }
+
 }
+
 

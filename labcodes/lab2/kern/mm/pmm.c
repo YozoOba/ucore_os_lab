@@ -359,6 +359,27 @@ get_pte(pde_t *pgdir, uintptr_t la, bool create) {
     }
     return NULL;          // (8) return page table entry
 #endif
+// 段机制后得到的地址是linear_addr, ucore中目前va = la
+    pde_t *pdep = &pgdir[PDX(la)]; // 找到它的一级页表项（指针），PDX，线性地址的前十位，page dir index
+    if(!(*pdep & PTE_P)) // 看一级页表项，其实就是二级页表的物理地址，如果存在（证明二级页表）存在，在二级页表中找到，并直接返回
+    {   
+        if(!create) // 不要求create，直接返回
+            return NULL;
+        // 否则alloc a page，建立二级页表，（成功的话）并设置这个page的ref为1，将内存也清空。
+        struct Page* page = alloc_page(); 
+        if(page == NULL)
+            return NULL;
+        set_page_ref(page, 1); 
+        uintptr_t pa = page2pa(page);  // 页清空
+        memset(KADDR(pa), 0, PGSIZE);
+        // 在一级页表中，设置该二级页表入口
+        *pdep = (pa & ~0xFFF) | PTE_P | PTE_W | PTE_U;
+    }
+    // PDE_ADDR 就是取了个 &，因为设置的时候取了 |。 得到的是二级页表真正的物理地址。
+    // (pte_t *)KADDR(PDE_ADDR(*pdep)): 将物理地址转换为 二级页表的核虚拟地址
+    // [PTX(la)] 加上la中相对二级页表的偏移
+    // 取地址，返回
+    return &((pte_t *)KADDR(PDE_ADDR(*pdep)))[PTX(la)];  // (*pdep)是物理地址
 }
 
 //get_page - get related Page struct for linear address la using PDT pgdir
@@ -404,6 +425,14 @@ page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep) {
                                   //(6) flush tlb
     }
 #endif
+if (*ptep & PTE_P) {
+        struct Page *page = pte2page(*ptep);
+        if (page_ref_dec(page) == 0) {
+            free_page(page);
+        }
+        *ptep = 0;
+        tlb_invalidate(pgdir, la);
+    }
 }
 
 //page_remove - free an Page which is related linear address la and has an validated pte
